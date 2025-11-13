@@ -13,12 +13,13 @@
  * M5Unified: https://github.com/m5stack/M5Unified
  * EspEasyUtils: https://github.com/tanakamasayuki/EspEasyUtils
  * QuickStats: https://github.com/dndubins/QuickStats
+ * FastLED: https://github.com/FastLED/FastLED
  */
 
 #include <M5Unified.h>
 #include <Wire.h>
 #include <VL53L1X.h>
-#include <EspEasyLED.h>
+#include <FastLED.h>
 #include <EspEasyTask.h>
 #include <QuickStats.h>
 
@@ -27,17 +28,18 @@
 #define PIN_SOL02 GPIO_NUM_14 // PortC pin2
 #define PIN_RCA01 GPIO_NUM_36 // PortB pin1
 #define PIN_RCA02 GPIO_NUM_26 // PortB pin2
-#define PIN_LED GPIO_NUM_27
+#define PIN_LED GPIO_NUM_19
+#define NUM_LEDS 8
 
 // PortA: ToF(i2c)
 // PortB: UnitRCA
 // PortC: Solenoid
-// GPIO2: RGB LED
+// GPIO27: RGB LED
 
 
 //-------------------------------
 
-EspEasyLED perfomanceLed(PIN_LED, 8, 128); // RGB LED
+CRGB performanceLeds[NUM_LEDS];
 
 EspEasyTask solenoidTask;
 EspEasyTask performanceTask;
@@ -86,8 +88,18 @@ void setup() {
     M5.Display.print(" - Peripherals: ");
     pinMode(PIN_SOL01, OUTPUT);
     pinMode(PIN_SOL02, OUTPUT);
+    // pinMode(PIN_RCA01, OUTPUT);
+    // pinMode(PIN_RCA02, OUTPUT);
     pinMode(PIN_LED, OUTPUT);
-    perfomanceLed.showColor(EspEasyLEDColor::RED);
+    M5.Display.println("    Pins");
+
+    // RGB LED
+    FastLED.addLeds<WS2812, PIN_LED>(performanceLeds, NUM_LEDS);
+    FastLED.setBrightness(128);
+    fill_solid(performanceLeds, NUM_LEDS, CRGB::Red);
+    FastLED.show();
+    M5.Display.println("    LED");
+
     M5.Display.println("    OK");
 
     // ----
@@ -133,10 +145,14 @@ void setup() {
     // randomSeed(analogRead(0)); 
     randomSeed(esp_random()); // ESP32のHW RNGを利用
     // ----
+    solenoidTask.begin(solenoidTaskLoop, 2, ESP_EASY_TASK_CPU_NUM);
 
-    perfomanceLed.showColor(EspEasyLEDColor::GREEN);    
+    fill_solid(performanceLeds, NUM_LEDS, CRGB::Green);
+    FastLED.show();
     M5.delay(1000); // 1s
-    perfomanceLed.clear();
+    // FastLED.clear();
+    fill_solid(performanceLeds, NUM_LEDS, CRGB::Black);
+    FastLED.show();
     M5.Display.fillScreen(BLACK);
     M5.Log(ESP_LOG_INFO, "init complete");
 }
@@ -160,10 +176,12 @@ void loop() {
     }
     QuickStats stats;//QuickStatsを初期化
     int value_mm = (int)stats.median(distances, num_distances); //中央値
+    int min = (int)stats.minimum(distances, num_distances); // 最小値
+    M5.Log.printf("value: %d, %d\n", value_mm, min);
 
     // ToFセンサーから取得したフローの距離より、吸気量(ml)に変換する
     value_ml = 0;
-    if (value_mm < min_distance) {
+    if (value_mm < min_distance * 1.5 && min < min_distance * 1.2) {
         value_ml = 0;
         // TODO: 表示用の例外処理
     } else if (max_distance < value_mm) {
@@ -174,7 +192,7 @@ void loop() {
     }
 
     // 吸気量(ml)より動作条件を決定
-    if (value_mm < min_distance * 1.1) {
+    if (0 == value_ml) {
         if (prevMode == 1) {
             stop();
         }
@@ -209,16 +227,18 @@ void loop() {
 void start() {
     M5.Log(ESP_LOG_INFO, "startPeformance");
     solenoid_enabled = true;
-    solenoidTask.begin(solenoidTaskLoop, 2, ESP_EASY_TASK_CPU_NUM);
+    // solenoidTask.begin(solenoidTaskLoop, 2, ESP_EASY_TASK_CPU_NUM);
     // performanceTask.begin(performanceTaskLoop, 2, ESP_EASY_TASK_CPU_NUM);
 }
 
 void stop() {
     M5.Log(ESP_LOG_INFO, "stopPerformance");
     solenoid_enabled = false;
-    solenoidTask.suspend(); // stop Task
+    // solenoidTask.suspend(); // stop Task
     // performanceTask.suspend(); // stop Task
-    perfomanceLed.clear(); // trun off LED
+    // FastLED.clear(); // turn off LED
+    // fill_solid(performanceLeds, NUM_LEDS, CRGB::Black);
+    // FastLED.show();
     digitalWrite(PIN_SOL01, LOW); // turn off Solenoid
     digitalWrite(PIN_SOL02, LOW); // turn off Solenoid
 
@@ -229,8 +249,15 @@ void solenoidTaskLoop() {
         if (!solenoid_enabled) {
             // ソレノイド実行中でなければ全てを停止してスキップ
             digitalWrite(PIN_SOL01, LOW);
-            perfomanceLed.showColor(EspEasyLEDColor::BLACK);
-            perfomanceLed.show();
+
+            uint8_t gHue = random(256);
+            FastLED.setBrightness(64);
+            performanceLeds[0] = CRGB::Black;
+            fill_rainbow(performanceLeds, NUM_LEDS, gHue);
+            FastLED.show();
+
+            // FastLED.clear();
+            // FastLED.show();
             M5.delay(100); // 100ms
             continue;
         }
@@ -238,49 +265,49 @@ void solenoidTaskLoop() {
         // 計測結果より、パフォーマンスの動作条件を決定する
         uint8_t point = 0;
         uint8_t delay_ms = 0;
+        CRGB led_color = CRGB::Black;
         if (value_ml < 1000) {
             point = 1;
             delay_ms = 1400;
+            led_color = CRGB::White;
         } else if (value_ml < 2000) {
             point = 2;
             delay_ms = 1200;
+            led_color = CRGB::White;
         } else if (value_ml < 3000) {
             point = 4;
             delay_ms = 1000;
+            led_color = CRGB::Yellow;
         } else if (value_ml < 4000) {
             point = 5;
             delay_ms = 800;
+            led_color = CRGB::Yellow;
         } else { // over 4000ml
             point = 6;
             delay_ms = 600;
+            led_color = CRGB::Red;
         }
         // LEDとソレノイドを動作させる
         uint8_t r, g, b;
-        M5.Log.printf("solenoid_enabled %d, %d\n", point, delay_ms);
-        M5.Log.printf("led num: %d", perfomanceLed.getLedNum());
+        // M5.Log.printf("solenoid_enabled %d, %d\n", point, delay_ms);
+        // M5.Log.printf("led num: %d", NUM_LEDS);
 
         // on phase
-        M5.Log(ESP_LOG_INFO, "on");
+        // M5.Log(ESP_LOG_INFO, "on");
         digitalWrite(PIN_SOL01, HIGH);
         digitalWrite(PIN_SOL02, HIGH);
-        // // fade in 0(MIN) to 100(MAX)
-        // for (int i = 1; i <= 10; i++) {
-        //     r = random(256);
-        //     g = random(256);
-        //     b = random(256);
-        //     perfomanceLed.showColor(r, g, b);
-        //     perfomanceLed.setBrightness(i * 10);
-        //     perfomanceLed.show();
-        //     M5.delay(delay_ms / 10);
-        // }
-        perfomanceLed.showColor(EspEasyLEDColor::WHITE);
+        FastLED.setBrightness(128);
+        fill_solid(performanceLeds, NUM_LEDS, led_color);
+        FastLED.show();
         M5.delay(delay_ms);
 
         // off phase
-        M5.Log(ESP_LOG_INFO, "phase");
+        // M5.Log(ESP_LOG_INFO, "phase");
         digitalWrite(PIN_SOL01, LOW);
         digitalWrite(PIN_SOL02, LOW);
-        perfomanceLed.showColor(EspEasyLEDColor::BLACK);
+        // FastLED.clear();
+        fill_solid(performanceLeds, NUM_LEDS, CRGB::Black);
+        FastLED.show();
         M5.delay(delay_ms);
     }
 }
@@ -288,14 +315,14 @@ void solenoidTaskLoop() {
 void performanceTaskLoop() {
   while(1){
     uint8_t r, g, b, brightness;
-    for(int i = 0; i < perfomanceLed.getLedNum(); i++) {
+    for(int i = 0; i < NUM_LEDS; i++) {
         r = random(256);
         g = random(256);
         b = random(256);
         brightness = random(90)+10;
-        perfomanceLed.setColor(i, r, g, b);
-        perfomanceLed.setBrightness(brightness);
-        perfomanceLed.show();
+        performanceLeds[i] = CRGB(r, g, b);
+        FastLED.setBrightness(brightness);
+        FastLED.show();
     }
     M5.delay(200);
   }
