@@ -17,6 +17,7 @@
  */
 
 #include <M5Unified.h>
+#include <M5UnitRCA.h>
 #include <Wire.h>
 #include <VL53L1X.h>
 #include <FastLED.h>
@@ -55,6 +56,17 @@ int max_distance = 140;
 int num_distances = 5;
 float distances[5];
 
+//-------------------------------
+
+M5UnitRCA gfx_rca ( 216                            // logical_width
+                  , 144                            // logical_height
+                  , 256                            // output_width
+                  , 160                            // output_height
+                  , M5UnitRCA::signal_type_t::NTSC_J // signal_type
+                  );
+
+//-------------------------------
+
 bool solenoid_enabled = false;
 int prevMode = 0;
 int value_ml = 0;
@@ -72,7 +84,7 @@ void performanceTaskLoop();
 void setup() {
     auto cfg = M5.config();        // 既定設定を取得
     cfg.clear_display   = true;
-    // cfg.external_speaker= false;
+    cfg.internal_spk    = false;
     cfg.internal_imu    = false;   // 使っていなければOFF（任意）
     cfg.output_power    = true;    // Core2のPMU電源出力をON
     M5.begin(cfg);
@@ -101,6 +113,19 @@ void setup() {
     M5.Display.println("    LED");
 
     M5.Display.println("    OK");
+
+    // ----
+
+    M5.Display.print(" - RCA: ");
+    pinMode(PIN_RCA02, OUTPUT);
+    digitalWrite(PIN_RCA02, HIGH);
+    // gfx_rca.init();
+    // gfx_rca.setFont(&DejaVu24);
+    // gfx_rca.clear(TFT_BLACK);
+
+    // gfx_rca.setOutputPin(PIN_RCA02);
+    // gfx_rca.setTextColor(TFT_WHITE, TFT_BLACK);
+    // gfx_rca.drawCenterString("HOGE", 120, 110);
 
     // ----
 
@@ -217,6 +242,11 @@ void loop() {
     M5.Display.printf("status     : %20s\n", VL53L1X::rangeStatusToString(sensor.ranging_data.range_status));
     M5.Display.printf("peak signal: %8.4f\n", sensor.ranging_data.peak_signal_count_rate_MCPS);
     M5.Display.printf("ambient    : %8.4f\n", sensor.ranging_data.ambient_count_rate_MCPS);
+
+    // gfx_rca.setOutputPin(PIN_RCA02);
+    // gfx_rca.clear(TFT_BLACK);
+    // gfx_rca.setTextColor(TFT_WHITE, TFT_BLACK);
+    // gfx_rca.drawCenterString("HOGE", 120, 110);
 
     M5.delay(1);
 }
