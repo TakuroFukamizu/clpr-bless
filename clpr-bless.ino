@@ -193,7 +193,9 @@ void loop() {
         }
         if (sensor.ranging_data.range_status != VL53L1X::RangeStatus::RangeValid) {
             // 測定値が信用できない場合はスキップ
-            Serial.printf("status: %20s -> skip\n", VL53L1X::rangeStatusToString(sensor.ranging_data.range_status));
+            M5.Log.printf(
+                "status: %20s -> skip\n", 
+                VL53L1X::rangeStatusToString(sensor.ranging_data.range_status));
             continue;
         }
         distances[i] = sensor.ranging_data.range_mm;
